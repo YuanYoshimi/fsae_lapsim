@@ -1,7 +1,7 @@
 # CMake / build
-fsae_lapsim/build/
+build/
 
 # Generated run outputs
-fsae_lapsim/output/
+output/
 
 .DS_Store

@@ -46,7 +46,7 @@ ctest --test-dir build --output-on-failure
 ## Project Structure
 
 ```
-fsae_lapsim/
+.
 ├── CMakeLists.txt          # Build system
 ├── README.md
 ├── config/default.yaml     # Vehicle parameters

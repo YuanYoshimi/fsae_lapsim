@@ -7,22 +7,22 @@ Updated at the end of each phase.
 
 ## Current State (as of 2026-05-02)
 
-- **Tests:** 54/54 passing
-- **Solvers:** Basic, QSS, FrictionCircle, Aero (all working)
-- **Visualizer:** 4-panel raylib viewer with ghost-car comparison
-- **Most recent phase:** Phase 7 complete (animated visualizer)
-- **Next phase:** Phase 8 (track width geometry)
+- **Tests:** 80/80 passing
+- **Solver:** LapTimeSolver with PhysicsConfig presets (basic, qss, fc, aero)
+- **Visualizer:** 4-panel raylib viewer with ghost-car comparison + track boundaries
+- **Most recent phase:** Phase 9 complete (track width + boundaries)
+- **Next phase:** Phase 10 (racing line representation)
 
 ---
 
 ## Lap Times (current canonical values)
 
-| Solver | Lap Time | Physics Captured |
+| Preset | Lap Time | Physics Captured |
 |---|---|---|
-| Basic | 25.290 s | Constant corner speed, kinematic straights |
-| QSS | 25.157 s | Continuous v(s) profile (forward + backward) |
-| FrictionCircle | 25.424 s | Combined longitudinal + lateral grip (elliptical) |
-| Aero | 25.085 s | Speed-dependent grip (downforce) + drag |
+| basic | 25.290 s | Constant corner speed, kinematic straights |
+| qss | 25.157 s | Continuous v(s) profile (forward + backward) |
+| fc | 25.424 s | Combined longitudinal + lateral grip (elliptical) |
+| aero | 25.085 s | Speed-dependent grip (downforce) + drag |
 
 ---
 
@@ -30,6 +30,7 @@ Updated at the end of each phase.
 
 - 8 segments, 384.23 m total, validates closed (zero gap)
 - CCW lap from origin, initial heading π (−x direction)
+- Track width: 4.0 m (constant, FSAE autocross typical)
 - All in `tracks/interview_track.yaml`
 
 | ID | Type | Spec | Length (m) |
@@ -61,7 +62,7 @@ Updated at the end of each phase.
 
 - C++20, CMake (FetchContent), raylib + yaml-cpp + GoogleTest
 - Modular: Geometry → Track → Solver → Telemetry → Visualizer
-- Solvers are strategy pattern (abstract Solver base + 4 concrete classes)
+- Single LapTimeSolver with PhysicsConfig (3 bool flags + ds) replaces old strategy pattern
 - TireModel and Aero also abstract for future extension
 
 ---
@@ -100,11 +101,19 @@ CSV + JSON + per-segment summary CSV. Added DriverState classification, mean_ell
 
 4-panel raylib viewer. Track view with car triangle and color-coded trail. HUD with PRIMARY/GHOST labels and time delta. G-G diagram with friction ellipse and history dots. Speed trace with current-position marker. Ghost car in amber, primary in cyan.
 
+### Phase 8: Solver Consolidation (DONE)
+
+Replaced four parallel solver classes (BasicSolver, QssSolver, FrictionCircleSolver, AeroSolver) with a single `LapTimeSolver` class that branches on a `PhysicsConfig` struct with three boolean flags (`continuous_profile`, `friction_circle`, `aero`). Four named presets reproduce canonical lap times bit-identically. CLI uses `--preset=basic|qss|fc|aero` (default: aero) and `--ds=<float>`. Old `Solver` abstract base class and all four concrete classes deleted. Test count 54→72, all passing.
+
+### Phase 9: Track Width + Boundaries (DONE)
+
+Added constant track width (4.0 m) to geometry layer. YAML `width_m` field parsed by TrackLoader with 4.0 m default + stderr warning. Segment base class gained virtual `left/right_boundary_point(s, width)` — Straight uses perpendicular offset, Arc uses radial offset with inside/outside logic depending on turn direction. Guard throws `std::runtime_error` if inside radius < 0.1 m. Track delegates via arc-length lookup. Visualizer renders left/right boundaries as dim gray (80,80,90) lines at 1.5px before the centerline; bounding box includes boundary extent. CLI header shows width. All four lap times unchanged (no solver/physics touched). Test count 72→80.
+
 ---
 
 ## Known Limitations (and how I'd address them)
 
-- **No racing line / no track width** — currently solving along the geometric centerline. Phases 8-11 add this.
+- **No racing line** — currently solving along the geometric centerline. Phases 10-11 add this.
 - **Constant μ (no load sensitivity)** — would add Pacejka tire model in TireModel strategy slot.
 - **No weight transfer** — would extend point mass to 4-wheel model.
 - **Constant a_max (no torque curve)** — would add P/(m·v) constraint.
@@ -131,12 +140,12 @@ cmake --build build -j$(sysctl -n hw.ncpu)
 # Run tests
 ctest --test-dir build --output-on-failure
 
-# Run a solver
-./build/lapsim_cli config/default.yaml --solver=aero --csv=output/aero.csv
+# Run a preset
+./build/lapsim_cli config/default.yaml --preset=aero --csv=output/aero.csv
 
 # Generate all four CSVs
-for s in qss friction_circle aero; do
-  ./build/lapsim_cli config/default.yaml --solver=$s --csv=output/$s.csv
+for p in basic qss fc aero; do
+  ./build/lapsim_cli config/default.yaml --preset=$p --csv=output/$p.csv
 done
 
 # Visualize one solver

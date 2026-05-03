@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 namespace lapsim {
 
@@ -28,6 +29,17 @@ auto Straight::heading([[maybe_unused]] double s) const -> double {
 }
 
 auto Straight::type_name() const -> std::string { return "straight"; }
+
+auto Straight::left_boundary_point(double s, double width) const -> Vec2 {
+    // Left is +90° from heading: perpendicular = (-sin(h), cos(h))
+    Vec2 perp{-std::sin(start_heading_), std::cos(start_heading_)};
+    return position(s) + perp * (width / 2.0);
+}
+
+auto Straight::right_boundary_point(double s, double width) const -> Vec2 {
+    Vec2 perp{-std::sin(start_heading_), std::cos(start_heading_)};
+    return position(s) - perp * (width / 2.0);
+}
 
 // ── Arc ─────────────────────────────────────────────────────────────────────
 
@@ -73,5 +85,44 @@ auto Arc::heading(double s) const -> double {
 }
 
 auto Arc::type_name() const -> std::string { return "arc"; }
+
+auto Arc::left_boundary_point(double s, double width) const -> Vec2 {
+    double angle = start_angle_ + sign_ * s / radius_;
+    Vec2 outward{std::cos(angle), std::sin(angle)};
+
+    // For a LEFT turn (sign_ > 0): center is to the left of travel,
+    // outward points right. Left boundary is INSIDE (R - w/2).
+    // For a RIGHT turn (sign_ < 0): center is to the right,
+    // outward points left. Left boundary is OUTSIDE (R + w/2).
+    double r_left = (sign_ > 0.0) ? (radius_ - width / 2.0)
+                                   : (radius_ + width / 2.0);
+
+    if (r_left < 0.1) {
+        throw std::runtime_error(
+            "Arc '" + id_ + "': inside boundary radius " +
+            std::to_string(r_left) + " m is too small for width " +
+            std::to_string(width) + " m");
+    }
+
+    return center_ + outward * r_left;
+}
+
+auto Arc::right_boundary_point(double s, double width) const -> Vec2 {
+    double angle = start_angle_ + sign_ * s / radius_;
+    Vec2 outward{std::cos(angle), std::sin(angle)};
+
+    // Mirror of left: right is OUTSIDE for left turns, INSIDE for right turns.
+    double r_right = (sign_ > 0.0) ? (radius_ + width / 2.0)
+                                    : (radius_ - width / 2.0);
+
+    if (r_right < 0.1) {
+        throw std::runtime_error(
+            "Arc '" + id_ + "': inside boundary radius " +
+            std::to_string(r_right) + " m is too small for width " +
+            std::to_string(width) + " m");
+    }
+
+    return center_ + outward * r_right;
+}
 
 } // namespace lapsim

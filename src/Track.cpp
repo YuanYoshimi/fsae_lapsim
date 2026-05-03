@@ -9,6 +9,9 @@ namespace lapsim {
 
 void Track::set_name(const std::string& name) { name_ = name; }
 void Track::set_closed(bool closed) { closed_ = closed; }
+void Track::set_width(double width_m) { width_m_ = width_m; }
+
+auto Track::width() const noexcept -> double { return width_m_; }
 
 void Track::add_segment(std::unique_ptr<Segment> seg) {
     segments_.push_back(std::move(seg));
@@ -71,6 +74,34 @@ auto Track::heading(double s) const -> double {
         accumulated += seg_len;
     }
     return segments_.back()->end_heading();
+}
+
+auto Track::left_boundary_point(double s) const -> Vec2 {
+    s = std::clamp(s, 0.0, total_length());
+    double accumulated = 0.0;
+    for (const auto& seg : segments_) {
+        double seg_len = seg->length();
+        if (s <= accumulated + seg_len) {
+            return seg->left_boundary_point(s - accumulated, width_m_);
+        }
+        accumulated += seg_len;
+    }
+    return segments_.back()->left_boundary_point(
+        segments_.back()->length(), width_m_);
+}
+
+auto Track::right_boundary_point(double s) const -> Vec2 {
+    s = std::clamp(s, 0.0, total_length());
+    double accumulated = 0.0;
+    for (const auto& seg : segments_) {
+        double seg_len = seg->length();
+        if (s <= accumulated + seg_len) {
+            return seg->right_boundary_point(s - accumulated, width_m_);
+        }
+        accumulated += seg_len;
+    }
+    return segments_.back()->right_boundary_point(
+        segments_.back()->length(), width_m_);
 }
 
 auto Track::validate() const -> ValidationResult {

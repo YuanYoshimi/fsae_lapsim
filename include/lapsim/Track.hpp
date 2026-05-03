@@ -24,12 +24,16 @@ public:
 
     void set_name(const std::string& name);
     void set_closed(bool closed);
+    void set_width(double width_m);
 
     /// Append a segment to the track.
     void add_segment(std::unique_ptr<Segment> seg);
 
     [[nodiscard]] auto name() const -> const std::string&;
     [[nodiscard]] auto is_closed() const -> bool;
+
+    /// Constant track width [m].
+    [[nodiscard]] auto width() const noexcept -> double;
 
     /// Number of segments in the track.
     [[nodiscard]] auto segment_count() const -> std::size_t;
@@ -49,12 +53,19 @@ public:
     /// Heading [rad] at global arc-length s from track start.
     [[nodiscard]] auto heading(double s) const -> double;
 
+    /// Left boundary point at global arc-length s, offset by track width.
+    [[nodiscard]] auto left_boundary_point(double s) const -> Vec2;
+
+    /// Right boundary point at global arc-length s, offset by track width.
+    [[nodiscard]] auto right_boundary_point(double s) const -> Vec2;
+
     /// Check geometric continuity between segments and closure.
     [[nodiscard]] auto validate() const -> ValidationResult;
 
 private:
     std::string name_;
     bool closed_ = false;
+    double width_m_ = 4.0;
     std::vector<std::unique_ptr<Segment>> segments_;
 };
 

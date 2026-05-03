@@ -18,6 +18,7 @@ constexpr Color kBgDark      = {15, 15, 20, 255};
 constexpr Color kPanelBg     = {25, 25, 35, 255};
 constexpr Color kPanelBorder = {50, 50, 70, 255};
 constexpr Color kTrackLine   = {100, 100, 120, 255};
+constexpr Color kBoundaryLine = {80, 80, 90, 255};
 constexpr Color kAccelColor  = {60, 220, 80, 255};
 constexpr Color kBrakeColor  = {230, 60, 60, 255};
 constexpr Color kCornerColor = {240, 210, 50, 255};
@@ -106,15 +107,43 @@ void TelemetryVisualizer::run() {
         }
     }
 
-    // Track bounding box (world space)
+    // ── Precompute boundary polylines ──
+    std::vector<WPoint> left_boundary;
+    std::vector<WPoint> right_boundary;
+
+    for (std::size_t i = 0; i < track_.segment_count(); ++i) {
+        const auto& seg = track_.segment(i);
+        int n_pts;
+        if (std::abs(seg.curvature(0.0)) < 1e-9) {
+            n_pts = 2;
+        } else {
+            double swept = seg.length() * std::abs(seg.curvature(0.0));
+            n_pts = std::max(8, static_cast<int>(32.0 * swept / (2.0 * std::numbers::pi)));
+        }
+
+        for (int j = 0; j <= n_pts; ++j) {
+            double s = seg.length() * static_cast<double>(j) / static_cast<double>(n_pts);
+            auto lp = seg.left_boundary_point(s, track_.width());
+            auto rp = seg.right_boundary_point(s, track_.width());
+            left_boundary.push_back({static_cast<float>(lp.x), static_cast<float>(lp.y)});
+            right_boundary.push_back({static_cast<float>(rp.x), static_cast<float>(rp.y)});
+        }
+    }
+
+    // Track bounding box — include boundaries for correct framing
     float wmin_x =  1e30f, wmax_x = -1e30f;
     float wmin_y =  1e30f, wmax_y = -1e30f;
-    for (const auto& p : polyline) {
-        wmin_x = std::min(wmin_x, p.wx);
-        wmax_x = std::max(wmax_x, p.wx);
-        wmin_y = std::min(wmin_y, p.wy);
-        wmax_y = std::max(wmax_y, p.wy);
-    }
+    auto update_bounds = [&](const std::vector<WPoint>& pts) {
+        for (const auto& p : pts) {
+            wmin_x = std::min(wmin_x, p.wx);
+            wmax_x = std::max(wmax_x, p.wx);
+            wmin_y = std::min(wmin_y, p.wy);
+            wmax_y = std::max(wmax_y, p.wy);
+        }
+    };
+    update_bounds(polyline);
+    update_bounds(left_boundary);
+    update_bounds(right_boundary);
     float wrange_x = std::max(wmax_x - wmin_x, 1.0f);
     float wrange_y = std::max(wmax_y - wmin_y, 1.0f);
 
@@ -264,7 +293,21 @@ void TelemetryVisualizer::run() {
         DrawRectangle(0, 0, track_w, track_h, kPanelBg);
         DrawRectangleLines(0, 0, track_w, track_h, kPanelBorder);
 
-        // Track outline
+        // Track boundaries (drawn first so centerline is on top)
+        for (std::size_t i = 1; i < left_boundary.size(); ++i) {
+            DrawLineEx(
+                {to_sx(left_boundary[i - 1].wx), to_sy(left_boundary[i - 1].wy)},
+                {to_sx(left_boundary[i].wx),     to_sy(left_boundary[i].wy)},
+                1.5f, kBoundaryLine);
+        }
+        for (std::size_t i = 1; i < right_boundary.size(); ++i) {
+            DrawLineEx(
+                {to_sx(right_boundary[i - 1].wx), to_sy(right_boundary[i - 1].wy)},
+                {to_sx(right_boundary[i].wx),     to_sy(right_boundary[i].wy)},
+                1.5f, kBoundaryLine);
+        }
+
+        // Track centerline
         for (std::size_t i = 1; i < polyline.size(); ++i) {
             DrawLineEx(
                 {to_sx(polyline[i - 1].wx), to_sy(polyline[i - 1].wy)},
@@ -367,11 +410,16 @@ void TelemetryVisualizer::run() {
         }
 
         // Panel title
-        DrawText("TRACK VIEW", 10, 8, 16, kTextLight);
+        {
+            char title[128];
+            std::snprintf(title, sizeof(title),
+                          "TRACK VIEW | width: %.1f m | length: %.1f m",
+                          track_.width(), track_.total_length());
+            DrawText(title, 10, 8, 14, kTextLight);
+        }
         {
             char tname[128];
-            std::snprintf(tname, sizeof(tname), "%s  |  %.1f m",
-                          track_.name().c_str(), track_.total_length());
+            std::snprintf(tname, sizeof(tname), "%s", track_.name().c_str());
             DrawText(tname, 10, 28, 12, kTextDim);
         }
 

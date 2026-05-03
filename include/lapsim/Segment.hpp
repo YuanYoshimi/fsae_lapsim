@@ -33,6 +33,12 @@ public:
     /// Human-readable segment type ("straight" or "arc").
     [[nodiscard]] virtual auto type_name() const -> std::string = 0;
 
+    /// Left boundary point at arc-length s for given track width.
+    [[nodiscard]] virtual auto left_boundary_point(double s, double width) const -> Vec2 = 0;
+
+    /// Right boundary point at arc-length s for given track width.
+    [[nodiscard]] virtual auto right_boundary_point(double s, double width) const -> Vec2 = 0;
+
 protected:
     std::string id_;
     Vec2 start_point_;
@@ -53,6 +59,8 @@ public:
     [[nodiscard]] auto position(double s) const -> Vec2 override;
     [[nodiscard]] auto heading(double s) const -> double override;
     [[nodiscard]] auto type_name() const -> std::string override;
+    [[nodiscard]] auto left_boundary_point(double s, double width) const -> Vec2 override;
+    [[nodiscard]] auto right_boundary_point(double s, double width) const -> Vec2 override;
 
 private:
     double length_m_;
@@ -74,6 +82,8 @@ public:
     [[nodiscard]] auto position(double s) const -> Vec2 override;
     [[nodiscard]] auto heading(double s) const -> double override;
     [[nodiscard]] auto type_name() const -> std::string override;
+    [[nodiscard]] auto left_boundary_point(double s, double width) const -> Vec2 override;
+    [[nodiscard]] auto right_boundary_point(double s, double width) const -> Vec2 override;
 
 private:
     double radius_;

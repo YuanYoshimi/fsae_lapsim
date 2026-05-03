@@ -1,10 +1,13 @@
 #include "lapsim/Geometry.hpp"
 #include "lapsim/Segment.hpp"
 #include "lapsim/Track.hpp"
+#include "lapsim/TrackLoader.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <numbers>
 
 using namespace lapsim;
@@ -192,4 +195,131 @@ TEST(TrackTest, GlobalPositionQuery) {
     EXPECT_NEAR(track.heading(0.0),  0.0, kEps);
     EXPECT_NEAR(track.heading(50.0), 0.0, kEps);
     EXPECT_NEAR(track.heading(75.0), 0.0, kEps);
+}
+
+// ── Track width ─────────────────────────────────────────────────────────────
+
+TEST(TrackWidthTest, WidthLoadedFromYaml) {
+    auto track = TrackLoader::load("tracks/interview_track.yaml");
+    EXPECT_NEAR(track.width(), 4.0, kEps);
+}
+
+TEST(TrackWidthTest, WidthDefaultWhenMissing) {
+    // YAML with no width_m field — should default to 4.0
+    const std::string yaml_content = R"(
+track:
+  name: "No Width Track"
+  start_point: [0.0, 0.0]
+  start_heading: 0.0
+  closed: false
+  segments:
+    - id: "S1"
+      type: straight
+      length: 10.0
+)";
+    auto tmp_path = std::filesystem::temp_directory_path() / "test_no_width.yaml";
+    {
+        std::ofstream ofs(tmp_path);
+        ofs << yaml_content;
+    }
+
+    auto track = TrackLoader::load(tmp_path.string());
+    EXPECT_NEAR(track.width(), 4.0, kEps);
+
+    std::filesystem::remove(tmp_path);
+}
+
+// ── Boundary geometry ───────────────────────────────────────────────────────
+
+TEST(BoundaryTest, StraightLeftBoundary) {
+    // Heading +x (0 rad), width 4. Left of +x is +y.
+    Straight seg("S1", {0.0, 0.0}, 0.0, 100.0);
+
+    auto left  = seg.left_boundary_point(50.0, 4.0);
+    auto right = seg.right_boundary_point(50.0, 4.0);
+
+    EXPECT_NEAR(left.x,  50.0, kEps);
+    EXPECT_NEAR(left.y,   2.0, kEps);
+    EXPECT_NEAR(right.x, 50.0, kEps);
+    EXPECT_NEAR(right.y, -2.0, kEps);
+}
+
+TEST(BoundaryTest, StraightLeftBoundaryHeadingNorth) {
+    // Heading +y (pi/2 rad), width 4. Left of +y is -x.
+    Straight seg("S1", {0.0, 0.0}, kPi / 2.0, 10.0);
+
+    auto left  = seg.left_boundary_point(5.0, 4.0);
+    auto right = seg.right_boundary_point(5.0, 4.0);
+
+    EXPECT_NEAR(left.x,  -2.0, kEps);
+    EXPECT_NEAR(left.y,   5.0, kEps);
+    EXPECT_NEAR(right.x,  2.0, kEps);
+    EXPECT_NEAR(right.y,  5.0, kEps);
+}
+
+TEST(BoundaryTest, ArcLeftTurnInsideRadius) {
+    // Left turn: R=10, swept +pi/2, start (0,0) heading +x, width=4
+    // Center at (0, 10).
+    Arc seg("C1", {0.0, 0.0}, 0.0, 10.0, kPi / 2.0);
+
+    // At s=0: outward = (0,-1), left is inside (R-2=8), right is outside (R+2=12)
+    auto l0 = seg.left_boundary_point(0.0, 4.0);
+    auto r0 = seg.right_boundary_point(0.0, 4.0);
+    EXPECT_NEAR(l0.x, 0.0, 1e-8);
+    EXPECT_NEAR(l0.y, 2.0, 1e-8);
+    EXPECT_NEAR(r0.x, 0.0, 1e-8);
+    EXPECT_NEAR(r0.y, -2.0, 1e-8);
+
+    // At s=length: outward = (1,0), left inside (8,10), right outside (12,10)
+    auto le = seg.left_boundary_point(seg.length(), 4.0);
+    auto re = seg.right_boundary_point(seg.length(), 4.0);
+    EXPECT_NEAR(le.x, 8.0, 1e-8);
+    EXPECT_NEAR(le.y, 10.0, 1e-8);
+    EXPECT_NEAR(re.x, 12.0, 1e-8);
+    EXPECT_NEAR(re.y, 10.0, 1e-8);
+}
+
+TEST(BoundaryTest, ArcRightTurnInsideRadius) {
+    // Right turn: R=10, swept -pi/2, start (0,0) heading +x, width=4
+    // Center at (0, -10).
+    Arc seg("C2", {0.0, 0.0}, 0.0, 10.0, -kPi / 2.0);
+
+    // At s=0: outward = (0,1), left is OUTSIDE (R+2=12), right is INSIDE (R-2=8)
+    auto l0 = seg.left_boundary_point(0.0, 4.0);
+    auto r0 = seg.right_boundary_point(0.0, 4.0);
+    EXPECT_NEAR(l0.x, 0.0, 1e-8);
+    EXPECT_NEAR(l0.y, 2.0, 1e-8);
+    EXPECT_NEAR(r0.x, 0.0, 1e-8);
+    EXPECT_NEAR(r0.y, -2.0, 1e-8);
+}
+
+TEST(BoundaryTest, InterviewTrackBoundariesNoNonsense) {
+    auto track = TrackLoader::load("tracks/interview_track.yaml");
+    double total = track.total_length();
+    double w = track.width();
+    double half_w = w / 2.0;
+
+    for (int i = 0; i < 100; ++i) {
+        double s = total * static_cast<double>(i) / 99.0;
+        auto center = track.position(s);
+        auto left   = track.left_boundary_point(s);
+        auto right  = track.right_boundary_point(s);
+
+        double d_left  = center.distance_to(left);
+        double d_right = center.distance_to(right);
+
+        EXPECT_NEAR(d_left,  half_w, 1e-6)
+            << "Left boundary distance wrong at s=" << s;
+        EXPECT_NEAR(d_right, half_w, 1e-6)
+            << "Right boundary distance wrong at s=" << s;
+    }
+}
+
+TEST(BoundaryTest, TooTightArcThrows) {
+    // R=1.0, width=4.0 -> R - w/2 = -1.0 < 0.1 -> should throw
+    Arc seg("C_tight", {0.0, 0.0}, 0.0, 1.0, kPi / 2.0);
+
+    EXPECT_THROW(
+        { [[maybe_unused]] auto _ = seg.left_boundary_point(0.0, 4.0); },
+        std::runtime_error);
 }

@@ -5,6 +5,7 @@
 
 track:
   name: "FSAE Interview Track"
+  width_m: 4.0    # constant track width (m), FSAE autocross typical
   start_point: [0.0, 0.0]
   start_heading: 3.141592653589793  # pi: traveling left
   closed: true

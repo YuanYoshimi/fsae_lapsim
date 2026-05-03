@@ -13,6 +13,12 @@ auto TrackLoader::load(const std::string& path) -> Track {
     track.set_name(track_node["name"].as<std::string>("Unnamed Track"));
     track.set_closed(track_node["closed"].as<bool>(false));
 
+    if (track_node["width_m"]) {
+        track.set_width(track_node["width_m"].as<double>());
+    } else {
+        std::cerr << "Warning: track YAML missing 'width_m', defaulting to 4.0 m\n";
+    }
+
     auto start_seq = track_node["start_point"];
     Vec2 cursor_pt{start_seq[0].as<double>(), start_seq[1].as<double>()};
     double cursor_hdg = track_node["start_heading"].as<double>();

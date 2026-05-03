@@ -1,0 +1,24 @@
+# ============================================================
+# FSAE Lap Time Simulator — Default Vehicle Configuration
+# ============================================================
+# All values are approximate for a typical FSAE car.
+# Units: SI (kg, m, s, W, N) unless otherwise noted.
+
+vehicle:
+  mass_kg: 250.0          # Total mass including 68 kg driver
+  wheelbase_m: 1.55       # Front-to-rear axle distance
+  h_cg_m: 0.27            # Centre-of-gravity height above ground
+  g: 9.81                 # Gravitational acceleration [m/s^2]
+  mu: 0.7                 # Peak tire-road friction coefficient
+  max_accel: 14.0         # Max longitudinal accel/decel [m/s^2]
+  max_power_w: 60000.0    # Peak engine/motor power [W] (~80 hp)
+  cda_m2: 0.45            # Drag area  (Cd * frontal area)
+  cla_m2: 1.60            # Downforce area (Cl * planform area)
+
+aero:
+  rho: 1.225              # Air density at sea level [kg/m^3]
+  CdA: 1.0               # Drag area [m^2] (FSAE typical 0.8-1.2)
+  ClA: 1.5               # Downforce area [m^2] (FSAE typical 1.0-2.5 with full aero package)
+
+solver:
+  ds_m: 0.5               # Spatial step size for integration [m]

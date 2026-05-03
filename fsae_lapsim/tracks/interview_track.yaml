@@ -1,0 +1,48 @@
+# FSAE Interview Track
+# All units: meters and radians.
+# Coordinate system: Start at origin, +x right, +y up.
+# Car begins traveling in -x direction (heading = pi), CCW lap.
+
+track:
+  name: "FSAE Interview Track"
+  start_point: [0.0, 0.0]
+  start_heading: 3.141592653589793  # pi: traveling left
+  closed: true
+
+  segments:
+    - id: "S1"
+      type: straight
+      length: 100.0
+
+    - id: "C1"
+      type: arc
+      radius: 22.5
+      swept_angle: 3.141592653589793   # +pi, left turn 180 deg
+
+    - id: "C2"
+      type: arc
+      radius: 20.0
+      swept_angle: -1.5707963267948966  # -pi/2, right turn (concave bump)
+
+    - id: "C3"
+      type: arc
+      radius: 20.0
+      swept_angle: 1.5707963267948966   # +pi/2, left turn
+
+    - id: "S2"
+      type: straight
+      length: 60.0
+
+    - id: "C4"
+      type: arc
+      radius: 5.0
+      swept_angle: 1.5707963267948966   # +pi/2, left turn
+
+    - id: "S3"
+      type: straight
+      length: 75.0
+
+    - id: "C5"
+      type: arc
+      radius: 5.0
+      swept_angle: 1.5707963267948966   # +pi/2, left turn back to Start

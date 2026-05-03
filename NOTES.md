@@ -7,11 +7,11 @@ Updated at the end of each phase.
 
 ## Current State (as of 2026-05-02)
 
-- **Tests:** 80/80 passing
+- **Tests:** 87/87 passing
 - **Solver:** LapTimeSolver with PhysicsConfig presets (basic, qss, fc, aero)
-- **Visualizer:** 4-panel raylib viewer with ghost-car comparison + track boundaries
-- **Most recent phase:** Phase 9 complete (track width + boundaries)
-- **Next phase:** Phase 10 (racing line representation)
+- **Visualizer:** 4-panel raylib viewer with ghost-car comparison, track boundaries, optional racing-line overlay
+- **Most recent phase:** Phase 10 complete (racing line representation)
+- **Next phase:** Phase 11 (solver consumes paths)
 
 ---
 
@@ -109,11 +109,21 @@ Replaced four parallel solver classes (BasicSolver, QssSolver, FrictionCircleSol
 
 Added constant track width (4.0 m) to geometry layer. YAML `width_m` field parsed by TrackLoader with 4.0 m default + stderr warning. Segment base class gained virtual `left/right_boundary_point(s, width)` — Straight uses perpendicular offset, Arc uses radial offset with inside/outside logic depending on turn direction. Guard throws `std::runtime_error` if inside radius < 0.1 m. Track delegates via arc-length lookup. Visualizer renders left/right boundaries as dim gray (80,80,90) lines at 1.5px before the centerline; bounding box includes boundary extent. CLI header shows width. All four lap times unchanged (no solver/physics touched). Test count 72→80.
 
+### Phase 10: Racing Line Representation (DONE)
+
+`RacingLine` class produces a hand-coded out-in-out path inside the corridor, parameterized by centerline arc-length. Sign convention: `+ offset = LEFT of travel`. Arc offset profile is a piecewise smoothstep: `entry → apex → exit` (zero slope at all knots, so no kinks at boundaries). Straight profile blends `prev.exit_off → 0 → next.entry_off` over `entry_blend_m` / `exit_blend_m` with a centerline plateau in the middle for long straights. Adjacent-arc seams (C1/C2, C2/C3 chicane) are averaged in pass 1.5 to remove what would otherwise be a 3.4 m offset jump at opposite-handed corners.
+
+Curvature uses the closed-form offset-curve formula `κ_line = κ_track / (1 - off · κ_track)` (do Carmo §1-7), exact at apex plateaus, with a denominator>0.1 sanity guard. No FD on track quantities (avoids spikes at the κ-discontinuous straight-arc boundary). `Track::curvature(s)` was added as a thin segment-lookup wrapper. Heading is centered FD on `position()` with h=0.1 m.
+
+Visualizer renders the racing line as a 2.5 px bright-orange (255,140,0) overlay sampled at ds=0.5 m; title gains "racing line: ON" when active. `lapsim_viz --racing-line` enables it. Without the flag, the viz is identical to Phase 9.
+
+7 new tests in `test_racing_line.cpp`. The HeadingContinuousAtBoundaries test deviates from the spec'd `heading(s ± 0.1)` and uses a 1 mm chord on each side instead — on tight arcs (R=5 C4/C5) the line genuinely sweeps ~0.12 rad in 0.1 m as offset transitions to apex, which is real fast evolution, not a kink; the 1 mm chord isolates true boundary continuity. All four lap times unchanged (no solver/physics touched). Test count 80→87.
+
 ---
 
 ## Known Limitations (and how I'd address them)
 
-- **No racing line** — currently solving along the geometric centerline. Phases 10-11 add this.
+- **No racing line in solver** — Phase 10 added a `RacingLine` representation but solvers still consume the centerline. Phase 11 wires the line into the solver.
 - **Constant μ (no load sensitivity)** — would add Pacejka tire model in TireModel strategy slot.
 - **No weight transfer** — would extend point mass to 4-wheel model.
 - **Constant a_max (no torque curve)** — would add P/(m·v) constraint.
@@ -153,6 +163,9 @@ done
 
 # Visualize with ghost
 ./build/lapsim_viz tracks/interview_track.yaml output/aero.csv output/qss.csv
+
+# Visualize with racing-line overlay
+./build/lapsim_viz tracks/interview_track.yaml output/aero.csv --racing-line
 ```
 
 ---

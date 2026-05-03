@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lapsim/RacingLine.hpp"
 #include "lapsim/TelemetryReader.hpp"
 #include "lapsim/Track.hpp"
 
@@ -19,9 +20,12 @@ public:
         std::string ghost_label;
     };
 
+    /// @param racing_line  Optional. If non-null, drawn as an orange overlay
+    ///                     on the track panel. Must outlive this visualizer.
     TelemetryVisualizer(const Track& track,
                          const TelemetryReader& primary,
                          const TelemetryReader* ghost,
+                         const RacingLine* racing_line,
                          const Config& cfg);
 
     void run();
@@ -30,6 +34,7 @@ private:
     const Track& track_;
     const TelemetryReader& primary_;
     const TelemetryReader* ghost_;
+    const RacingLine* racing_line_;
     Config cfg_;
 };
 

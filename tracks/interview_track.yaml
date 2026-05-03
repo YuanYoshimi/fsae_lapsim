@@ -14,6 +14,7 @@ track:
     - id: "S1"
       type: straight
       length: 100.0
+      racing_offset_m: -1.7    # outside of upcoming C1 (left turn) = right of travel
 
     - id: "C1"
       type: arc
@@ -33,6 +34,7 @@ track:
     - id: "S2"
       type: straight
       length: 60.0
+      racing_offset_m: -1.7    # outside of upcoming C4 (left turn)
 
     - id: "C4"
       type: arc
@@ -42,6 +44,7 @@ track:
     - id: "S3"
       type: straight
       length: 75.0
+      racing_offset_m: -1.7    # outside of upcoming C5 (left turn)
 
     - id: "C5"
       type: arc

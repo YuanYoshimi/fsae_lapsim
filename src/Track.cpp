@@ -76,6 +76,21 @@ auto Track::heading(double s) const -> double {
     return segments_.back()->end_heading();
 }
 
+auto Track::curvature(double s) const -> double {
+    if (segments_.empty()) return 0.0;
+
+    s = std::clamp(s, 0.0, total_length());
+    double accumulated = 0.0;
+    for (const auto& seg : segments_) {
+        double seg_len = seg->length();
+        if (s <= accumulated + seg_len) {
+            return seg->curvature(s - accumulated);
+        }
+        accumulated += seg_len;
+    }
+    return segments_.back()->curvature(segments_.back()->length());
+}
+
 auto Track::left_boundary_point(double s) const -> Vec2 {
     s = std::clamp(s, 0.0, total_length());
     double accumulated = 0.0;

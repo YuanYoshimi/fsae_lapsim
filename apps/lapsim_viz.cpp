@@ -1,19 +1,37 @@
+#include "lapsim/RacingLine.hpp"
 #include "lapsim/TelemetryReader.hpp"
 #include "lapsim/TelemetryVisualizer.hpp"
 #include "lapsim/TrackLoader.hpp"
 
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 int main(int argc, char* argv[]) {
     std::string track_yaml  = "tracks/interview_track.yaml";
     std::string primary_csv = "output/telemetry.csv";
     std::string ghost_csv;
+    bool show_racing_line = false;
 
-    if (argc > 1) track_yaml  = argv[1];
-    if (argc > 2) primary_csv = argv[2];
-    if (argc > 3) ghost_csv   = argv[3];
+    // Separate flags from positional args. Flags can appear in any order.
+    std::vector<std::string> positional;
+    for (int i = 1; i < argc; ++i) {
+        std::string_view a{argv[i]};
+        if (a == "--racing-line") {
+            show_racing_line = true;
+        } else if (a == "--help" || a == "-h") {
+            std::printf("usage: lapsim_viz [track.yaml] [primary.csv] [ghost.csv] [--racing-line]\n");
+            return 0;
+        } else {
+            positional.emplace_back(a);
+        }
+    }
+    if (positional.size() > 0) track_yaml  = positional[0];
+    if (positional.size() > 1) primary_csv = positional[1];
+    if (positional.size() > 2) ghost_csv   = positional[2];
 
     auto track = lapsim::TrackLoader::load(track_yaml);
 
@@ -50,6 +68,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::optional<lapsim::RacingLine> racing_line;
+    if (show_racing_line) {
+        racing_line.emplace(track, lapsim::RacingLineParams{});
+        std::printf("Racing line: ON (default params)\n");
+    }
+
     lapsim::TelemetryVisualizer::Config cfg;
     cfg.show_ghost = (ghost_ptr != nullptr);
 
@@ -62,7 +86,8 @@ int main(int argc, char* argv[]) {
     if (ghost_ptr)
         cfg.ghost_label = make_label(ghost_reader, ghost_csv);
 
-    lapsim::TelemetryVisualizer viz(track, primary, ghost_ptr, cfg);
+    const lapsim::RacingLine* racing_ptr = racing_line.has_value() ? &racing_line.value() : nullptr;
+    lapsim::TelemetryVisualizer viz(track, primary, ghost_ptr, racing_ptr, cfg);
     viz.run();
 
     return 0;

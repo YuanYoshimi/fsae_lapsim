@@ -3,6 +3,7 @@
 #include "lapsim/Geometry.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace lapsim {
@@ -62,8 +63,17 @@ public:
     [[nodiscard]] auto left_boundary_point(double s, double width) const -> Vec2 override;
     [[nodiscard]] auto right_boundary_point(double s, double width) const -> Vec2 override;
 
+    /// YAML-configured constant racing-line offset for this straight.
+    /// Sign convention: + = LEFT of travel direction. nullopt = let the
+    /// RacingLine algorithm interpolate between adjacent segments' offsets.
+    [[nodiscard]] auto racing_offset_m() const noexcept -> std::optional<double> {
+        return racing_offset_m_;
+    }
+    void set_racing_offset_m(double v) { racing_offset_m_ = v; }
+
 private:
     double length_m_;
+    std::optional<double> racing_offset_m_;
 };
 
 /// A constant-radius arc segment defined by radius and signed swept angle.

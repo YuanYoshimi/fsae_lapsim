@@ -53,6 +53,10 @@ public:
     /// Heading [rad] at global arc-length s from track start.
     [[nodiscard]] auto heading(double s) const -> double;
 
+    /// Signed curvature at global arc-length s [1/m]. Piecewise constant:
+    /// 0 on straights, ±1/R on arcs (positive = left turn).
+    [[nodiscard]] auto curvature(double s) const -> double;
+
     /// Left boundary point at global arc-length s, offset by track width.
     [[nodiscard]] auto left_boundary_point(double s) const -> Vec2;
 

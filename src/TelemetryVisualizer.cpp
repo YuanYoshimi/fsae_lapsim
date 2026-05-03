@@ -19,6 +19,7 @@ constexpr Color kPanelBg     = {25, 25, 35, 255};
 constexpr Color kPanelBorder = {50, 50, 70, 255};
 constexpr Color kTrackLine   = {100, 100, 120, 255};
 constexpr Color kBoundaryLine = {80, 80, 90, 255};
+constexpr Color kRacingLine   = {255, 140, 0, 255};
 constexpr Color kAccelColor  = {60, 220, 80, 255};
 constexpr Color kBrakeColor  = {230, 60, 60, 255};
 constexpr Color kCornerColor = {240, 210, 50, 255};
@@ -80,8 +81,10 @@ namespace lapsim {
 TelemetryVisualizer::TelemetryVisualizer(const Track& track,
                                          const TelemetryReader& primary,
                                          const TelemetryReader* ghost,
+                                         const RacingLine* racing_line,
                                          const Config& cfg)
-    : track_{track}, primary_{primary}, ghost_{ghost}, cfg_{cfg} {}
+    : track_{track}, primary_{primary}, ghost_{ghost},
+      racing_line_{racing_line}, cfg_{cfg} {}
 
 void TelemetryVisualizer::run() {
     // ── Precompute track polyline (same tessellation as RaylibVisualizer) ──
@@ -144,6 +147,23 @@ void TelemetryVisualizer::run() {
     update_bounds(polyline);
     update_bounds(left_boundary);
     update_bounds(right_boundary);
+
+    // ── Precompute racing line polyline (uniform 0.5 m sampling along
+    // centerline arc-length, same density as the offset profile). ──
+    std::vector<WPoint> racing_polyline;
+    if (racing_line_) {
+        constexpr double kRacingDs = 0.5;
+        const double L = racing_line_->track_length();
+        std::size_t n = static_cast<std::size_t>(std::ceil(L / kRacingDs)) + 1;
+        racing_polyline.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            double s = std::min(static_cast<double>(i) * kRacingDs, L);
+            auto p = racing_line_->position(s);
+            racing_polyline.push_back({static_cast<float>(p.x), static_cast<float>(p.y)});
+        }
+        update_bounds(racing_polyline);
+    }
+
     float wrange_x = std::max(wmax_x - wmin_x, 1.0f);
     float wrange_y = std::max(wmax_y - wmin_y, 1.0f);
 
@@ -315,6 +335,14 @@ void TelemetryVisualizer::run() {
                 3.0f, kTrackLine);
         }
 
+        // Racing line (drawn after centerline so it sits on top)
+        for (std::size_t i = 1; i < racing_polyline.size(); ++i) {
+            DrawLineEx(
+                {to_sx(racing_polyline[i - 1].wx), to_sy(racing_polyline[i - 1].wy)},
+                {to_sx(racing_polyline[i].wx),     to_sy(racing_polyline[i].wy)},
+                2.5f, kRacingLine);
+        }
+
         // Segment boundary markers (faint tick marks along track)
         for (std::size_t i = 0; i < seg_starts.size(); ++i) {
             std::size_t idx = seg_starts[i];
@@ -411,10 +439,16 @@ void TelemetryVisualizer::run() {
 
         // Panel title
         {
-            char title[128];
-            std::snprintf(title, sizeof(title),
-                          "TRACK VIEW | width: %.1f m | length: %.1f m",
-                          track_.width(), track_.total_length());
+            char title[160];
+            if (racing_line_) {
+                std::snprintf(title, sizeof(title),
+                              "TRACK VIEW | width: %.1f m | length: %.1f m | racing line: ON",
+                              track_.width(), track_.total_length());
+            } else {
+                std::snprintf(title, sizeof(title),
+                              "TRACK VIEW | width: %.1f m | length: %.1f m",
+                              track_.width(), track_.total_length());
+            }
             DrawText(title, 10, 8, 14, kTextLight);
         }
         {

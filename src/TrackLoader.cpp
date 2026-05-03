@@ -30,6 +30,9 @@ auto TrackLoader::load(const std::string& path) -> Track {
         if (type == "straight") {
             double len = seg_node["length"].as<double>();
             auto seg = std::make_unique<Straight>(id, cursor_pt, cursor_hdg, len);
+            if (seg_node["racing_offset_m"]) {
+                seg->set_racing_offset_m(seg_node["racing_offset_m"].as<double>());
+            }
             cursor_pt  = seg->end_point();
             cursor_hdg = seg->end_heading();
             track.add_segment(std::move(seg));
@@ -38,6 +41,10 @@ auto TrackLoader::load(const std::string& path) -> Track {
             double radius = seg_node["radius"].as<double>();
             double swept  = seg_node["swept_angle"].as<double>();
             auto seg = std::make_unique<Arc>(id, cursor_pt, cursor_hdg, radius, swept);
+            if (seg_node["racing_offset_m"]) {
+                std::cerr << "Warning: racing_offset_m is straight-only; ignored on arc '"
+                          << id << "'\n";
+            }
             cursor_pt  = seg->end_point();
             cursor_hdg = seg->end_heading();
             track.add_segment(std::move(seg));

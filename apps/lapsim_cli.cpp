@@ -1,4 +1,5 @@
-#include "lapsim/Solver.hpp"
+#include "lapsim/LapTimeSolver.hpp"
+#include "lapsim/PhysicsConfig.hpp"
 #include "lapsim/TrackLoader.hpp"
 #include "lapsim/Vehicle.hpp"
 
@@ -7,7 +8,6 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <memory>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -52,21 +52,39 @@ const lapsim::SegmentResult* find_result(const std::vector<lapsim::SegmentResult
     return nullptr;
 }
 
+/// Map legacy --solver names to preset names.
+std::string solver_to_preset(const std::string& solver_name) {
+    if (solver_name == "basic")            return "basic";
+    if (solver_name == "qss")              return "qss";
+    if (solver_name == "friction_circle")   return "fc";
+    if (solver_name == "aero")             return "aero";
+    return "aero";
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     std::string vehicle_yaml = "config/default.yaml";
     std::string track_yaml   = "tracks/interview_track.yaml";
-    std::string solver_name  = "aero";
+    std::string preset_name  = "aero";
     std::string csv_path     = "output/telemetry.csv";
     std::string json_path    = "output/telemetry.json";
     std::string seg_csv_path = "output/segments.csv";
+    double ds_override       = -1.0;
+    bool got_preset          = false;
 
     int pos_arg = 0;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg.starts_with("--solver=")) {
-            solver_name = arg.substr(9);
+        if (arg.starts_with("--preset=")) {
+            preset_name = arg.substr(9);
+            got_preset = true;
+        } else if (arg.starts_with("--solver=")) {
+            std::fprintf(stderr, "WARNING: --solver is deprecated; use --preset instead.\n");
+            if (!got_preset)
+                preset_name = solver_to_preset(arg.substr(9));
+        } else if (arg.starts_with("--ds=")) {
+            ds_override = std::stod(arg.substr(5));
         } else if (arg.starts_with("--csv=")) {
             csv_path = arg.substr(6);
         } else if (arg.starts_with("--json=")) {
@@ -80,13 +98,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    auto cfg = lapsim::PhysicsConfig::from_preset(preset_name);
+    if (ds_override > 0.0)
+        cfg.ds = ds_override;
+
     auto vehicle = lapsim::Vehicle::from_yaml(vehicle_yaml);
     auto track   = lapsim::TrackLoader::load(track_yaml);
 
     // ── Track summary ─────────────────────────────────────────────────
-    std::printf("\n=== Track: %s ===\n", track.name().c_str());
-    std::printf("Segments:     %zu\n", track.segment_count());
-    std::printf("Total length: %.3f m\n", track.total_length());
+    std::printf("\n=== Track: %s | length: %.1f m | width: %.1f m | %zu segments ===\n",
+                track.name().c_str(), track.total_length(), track.width(), track.segment_count());
     auto val = track.validate();
     std::printf("Validation:   %s\n", val.is_valid ? "PASS" : "FAIL");
 
@@ -106,19 +127,10 @@ int main(int argc, char* argv[]) {
         print_geo_row(track.segment(i));
 
     // ── Solver ────────────────────────────────────────────────────────
-    std::unique_ptr<lapsim::Solver> solver;
-    if (solver_name == "basic") {
-        solver = std::make_unique<lapsim::BasicSolver>();
-    } else if (solver_name == "qss") {
-        solver = std::make_unique<lapsim::QssSolver>(0.5);
-    } else if (solver_name == "friction_circle") {
-        solver = std::make_unique<lapsim::FrictionCircleSolver>(0.5);
-    } else {
-        solver = std::make_unique<lapsim::AeroSolver>(0.5);
-    }
-
-    std::printf("\n=== Solver: %s ===\n", solver->name().c_str());
-    auto telem = solver->solve(track, vehicle);
+    lapsim::LapTimeSolver solver;
+    std::printf("\n=== Preset: %s | %s ===\n",
+                cfg.preset_name().c_str(), cfg.description().c_str());
+    auto telem = solver.solve(track, vehicle, cfg);
     const auto& results = telem.segment_results();
 
     // ── Interview-format table ────────────────────────────────────────
@@ -152,8 +164,8 @@ int main(int argc, char* argv[]) {
     std::printf("\n  Sum of segment times: %.6f s | Profile-integrated total: %.6f s | Match: %s (tolerance 1e-6)\n",
                 seg_sum, profile_total, match ? "Y" : "N");
 
-    // ── Friction Budget Audit (elliptical utilization) ────────────────
-    if (telem.sample_count() > 0) {
+    // ── Friction Budget Audit (only when we have per-sample data) ─────
+    if (telem.sample_count() > 0 && cfg.continuous_profile) {
         double mu_g  = vehicle.mu * vehicle.g_mps2;
         double a_max = vehicle.max_accel_mps2;
         double mass  = vehicle.mass_kg;
@@ -166,11 +178,7 @@ int main(int argc, char* argv[]) {
         for (std::size_t i = 0; i < telem.sample_count(); ++i) {
             const auto& s = telem.sample(i);
             double a_lat_mps2 = s.lat_accel_g * vehicle.g_mps2;
-
-            // Use speed-dependent a_lat_max if available, else static mu*g.
             double a_lat_cap = (s.a_lat_max_mps2 > 0.0) ? s.a_lat_max_mps2 : mu_g;
-
-            // Recover tire-only longitudinal component by removing drag.
             double a_drive_mps2 = s.accel_g * vehicle.g_mps2
                                 + s.F_drag_N / mass;
 
@@ -241,9 +249,8 @@ int main(int argc, char* argv[]) {
         std::printf("       -1.0      0       +1.0\n");
     }
 
-    // ── Aero Audit (when aero telemetry is populated) ─────────────────
-    bool has_aero = telem.sample_count() > 1 && telem.sample(1).a_lat_max_mps2 > 0.0;
-    if (has_aero) {
+    // ── Aero Audit (only when aero is enabled) ────────────────────────
+    if (cfg.aero && telem.sample_count() > 1) {
         double peak_drag = 0.0, peak_df = 0.0;
         double v_at_peak_drag = 0.0, v_at_peak_df = 0.0;
         double sum_drag = 0.0, sum_df = 0.0;
@@ -310,8 +317,8 @@ int main(int argc, char* argv[]) {
     // ── Metadata + segment IDs for export ─────────────────────────────
     {
         lapsim::TelemetryMetadata meta;
-        meta.solver_name = solver->name();
-        meta.ds_m        = 0.5;
+        meta.solver_name = cfg.preset_name() + " (" + cfg.description() + ")";
+        meta.ds_m        = cfg.ds;
         meta.mu          = vehicle.mu;
         meta.g_mps2      = vehicle.g_mps2;
         meta.a_max_mps2  = vehicle.max_accel_mps2;
@@ -331,8 +338,8 @@ int main(int argc, char* argv[]) {
     std::printf("\n--- Telemetry Export ---\n");
     bool has_samples = telem.sample_count() > 0;
     if (!has_samples) {
-        std::printf("  BasicSolver does not produce per-sample telemetry. Use --solver=qss,\n"
-                    "  friction_circle, or aero for CSV output. Segments CSV still written.\n");
+        std::printf("  Basic preset does not produce per-sample telemetry. Use --preset=qss,\n"
+                    "  fc, or aero for CSV output. Segments CSV still written.\n");
     }
     if (!csv_path.empty() && has_samples) {
         telem.write_csv(csv_path);
@@ -359,7 +366,7 @@ int main(int argc, char* argv[]) {
             while (std::getline(ifs, line)) lines.push_back(line);
 
             std::printf("\n--- CSV Preview (%zu rows incl. header) ---\n", lines.size());
-            std::size_t show = 4; // header + 3 data rows
+            std::size_t show = 4;
             for (std::size_t i = 0; i < std::min(show, lines.size()); ++i)
                 std::printf("  %s\n", lines[i].c_str());
             if (lines.size() > show * 2) {

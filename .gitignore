@@ -5,3 +5,4 @@ build/
 output/
 
 .DS_Store
+cmake_test_discovery_*.json

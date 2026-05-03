@@ -1,6 +1,7 @@
 #include "lapsim/Geometry.hpp"
+#include "lapsim/LapTimeSolver.hpp"
+#include "lapsim/PhysicsConfig.hpp"
 #include "lapsim/Segment.hpp"
-#include "lapsim/Solver.hpp"
 #include "lapsim/Track.hpp"
 #include "lapsim/Vehicle.hpp"
 
@@ -15,12 +16,12 @@ namespace {
 constexpr double kPi = std::numbers::pi;
 } // namespace
 
-// ── Corner speed formula ──────────────────────────────────────────────
+// ── Corner speed via basic preset ─────────────────────────────────────
 
 TEST(SolverTest, CornerSpeed) {
-    double v = compute_corner_speed(0.7, 9.81, 10.0);
-    double expected = std::sqrt(0.7 * 9.81 * 10.0);
-    EXPECT_NEAR(v, expected, 1e-6);
+    // v_corner = sqrt(mu * g * R) on a 180-deg arc, R=10
+    double mu = 0.7, g = 9.81, R = 10.0;
+    double expected = std::sqrt(mu * g * R);
 
     Track track;
     track.set_name("CornerTest");
@@ -31,47 +32,24 @@ TEST(SolverTest, CornerSpeed) {
     auto s1 = std::make_unique<Straight>("S1", p, h, 10.0);
     p = s1->end_point(); h = s1->end_heading();
     track.add_segment(std::move(s1));
-    auto c1 = std::make_unique<Arc>("C1", p, h, 10.0, kPi);
+    auto c1 = std::make_unique<Arc>("C1", p, h, R, kPi);
     track.add_segment(std::move(c1));
 
     Vehicle veh;
-    veh.mu = 0.7; veh.g_mps2 = 9.81; veh.max_accel_mps2 = 14.0;
+    veh.mu = mu; veh.g_mps2 = g; veh.max_accel_mps2 = 14.0;
 
-    BasicSolver solver;
-    auto telem = solver.solve(track, veh);
+    LapTimeSolver solver;
+    auto telem = solver.solve(track, veh, PhysicsConfig::basic());
     const auto& results = telem.segment_results();
 
     ASSERT_EQ(results.size(), 2u);
-    double arc_length = kPi * 10.0;
+    double arc_length = kPi * R;
     double corner_time = arc_length / expected;
     EXPECT_NEAR(results[1].time, corner_time, 1e-3);
     EXPECT_NEAR(results[1].v_entry, expected, 1e-6);
 }
 
-// ── Pure acceleration straight ────────────────────────────────────────
-
-TEST(SolverTest, PureAccelStraight) {
-    auto r = compute_straight_time(0.0, 1e6, 50.0, 10.0);
-    double expected_v = std::sqrt(2.0 * 10.0 * 50.0);
-    EXPECT_NEAR(r.v_exit, expected_v, 1e-6);
-    EXPECT_NEAR(r.v_peak, expected_v, 1e-6);
-    EXPECT_NEAR(r.time, expected_v / 10.0, 1e-6);
-}
-
-// ── Accel-then-brake straight (v_i == v_f) ────────────────────────────
-
-TEST(SolverTest, AccelBrakeStraight) {
-    auto r = compute_straight_time(10.0, 10.0, 100.0, 10.0);
-    double expected_peak = std::sqrt(1100.0);
-    double expected_time = 2.0 * (expected_peak - 10.0) / 10.0;
-
-    EXPECT_NEAR(r.v_peak, expected_peak, 1e-6);
-    EXPECT_NEAR(r.v_exit, 10.0, 1e-6);
-    EXPECT_NEAR(r.time, expected_time, 1e-6);
-    EXPECT_NEAR(r.time, 4.633, 0.001);
-}
-
-// ── Full interview lap (BasicSolver) ──────────────────────────────────
+// ── Full interview lap (basic preset) ─────────────────────────────────
 
 TEST(SolverTest, FullInterviewLap) {
     Vehicle veh;
@@ -102,8 +80,8 @@ TEST(SolverTest, FullInterviewLap) {
     add_s("S3", 75.0);
     add_a("C5", 5.0,   kPi / 2.0);
 
-    BasicSolver solver;
-    auto telem = solver.solve(track, veh);
+    LapTimeSolver solver;
+    auto telem = solver.solve(track, veh, PhysicsConfig::basic());
     double total = telem.lap_time();
 
     EXPECT_GT(total, 5.0);

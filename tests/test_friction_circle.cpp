@@ -1,6 +1,7 @@
 #include "lapsim/Geometry.hpp"
+#include "lapsim/LapTimeSolver.hpp"
+#include "lapsim/PhysicsConfig.hpp"
 #include "lapsim/Segment.hpp"
-#include "lapsim/Solver.hpp"
 #include "lapsim/Track.hpp"
 #include "lapsim/Vehicle.hpp"
 
@@ -57,52 +58,21 @@ Track build_interview_track() {
 
 } // namespace
 
-// ── a_long_max unit tests ─────────────────────────────────────────────
-
-TEST(FrictionCircleTest, ALongMax_StraightFullAmax) {
-    // Elliptical: on a straight (kappa=0), a_lat_norm=0, so
-    // a_long_max = a_max * sqrt(1 - 0) = a_max = 14.
-    double mu_g = 0.7 * 9.81;
-    double result = FrictionCircleSolver::a_long_max(20.0, 0.0, mu_g, 14.0);
-    EXPECT_NEAR(result, 14.0, 1e-6);
-}
-
-TEST(FrictionCircleTest, ALongMax_PartialLateral) {
-    // v=10, kappa=0.05: a_lat = 5, a_lat/(mu*g) = 5/6.867 = 0.728
-    // a_long_max = 14 * sqrt(1 - 0.728^2) = 14 * sqrt(0.470) ≈ 9.59
-    double mu_g = 0.7 * 9.81;
-    double result = FrictionCircleSolver::a_long_max(10.0, 0.05, mu_g, 14.0);
-    double a_lat_norm = 5.0 / mu_g;
-    double expected = 14.0 * std::sqrt(1.0 - a_lat_norm * a_lat_norm);
-    EXPECT_NEAR(result, expected, 1e-3);
-    EXPECT_NEAR(result, 9.59, 0.05);
-}
-
-TEST(FrictionCircleTest, ALongMax_FullLateral) {
-    // v=20, kappa=0.05: a_lat = 400*0.05 = 20.  20 > mu_g = 6.87 → 0
-    double mu_g = 0.7 * 9.81;
-    double result = FrictionCircleSolver::a_long_max(20.0, 0.05, mu_g, 14.0);
-    EXPECT_DOUBLE_EQ(result, 0.0);
-}
-
-// ── Pure straight matches QSS ─────────────────────────────────────────
+// ── Pure straight: FC matches QSS (kappa=0 → full a_max) ─────────────
 
 TEST(FrictionCircleTest, PureStraight_MatchesQss) {
-    // With the elliptical constraint, kappa=0 gives a_long_max = a_max,
-    // identical to QSS.  Results should match within discretization error.
     TrackBuilder tb("Straight100");
     tb.straight("S1", 100.0);
 
     auto veh = make_vehicle();
-    double a = veh.max_accel_mps2;
+    LapTimeSolver solver;
 
-    FrictionCircleSolver fc(0.5);
-    QssSolver qss(0.5);
-    auto telem_fc  = fc.solve(tb.track, veh);
-    auto telem_qss = qss.solve(tb.track, veh);
+    auto telem_fc  = solver.solve(tb.track, veh, PhysicsConfig::fc());
+    auto telem_qss = solver.solve(tb.track, veh, PhysicsConfig::qss());
 
     EXPECT_NEAR(telem_fc.lap_time(), telem_qss.lap_time(), 1e-9);
 
+    double a = veh.max_accel_mps2;
     double expected_v = std::sqrt(2.0 * a * 100.0);
     double expected_t = std::sqrt(2.0 * 100.0 / a);
     const auto& res = telem_fc.segment_results();
@@ -124,8 +94,10 @@ TEST(FrictionCircleTest, PureCorner_SteadyState) {
     tb.arc("C1", R, kPi);
 
     auto veh = make_vehicle();
-    FrictionCircleSolver fc(0.25);
-    auto telem = fc.solve(tb.track, veh);
+    auto cfg = PhysicsConfig::fc();
+    cfg.ds = 0.25;
+    LapTimeSolver solver;
+    auto telem = solver.solve(tb.track, veh, cfg);
 
     const auto& res = telem.segment_results();
     ASSERT_EQ(res.size(), 2u);
@@ -143,17 +115,17 @@ TEST(FrictionCircleTest, CornerEntry_BrakesEarlier) {
     tb.arc("C1", 10.0, kPi);
 
     auto veh = make_vehicle();
-    QssSolver qss(0.25);
-    FrictionCircleSolver fc(0.25);
+    auto cfg_qss = PhysicsConfig::qss();
+    cfg_qss.ds = 0.25;
+    auto cfg_fc = PhysicsConfig::fc();
+    cfg_fc.ds = 0.25;
 
-    auto t_qss = qss.solve(tb.track, veh);
-    auto t_fc  = fc.solve(tb.track, veh);
+    LapTimeSolver solver;
+    auto t_qss = solver.solve(tb.track, veh, cfg_qss);
+    auto t_fc  = solver.solve(tb.track, veh, cfg_fc);
 
     ASSERT_EQ(t_qss.sample_count(), t_fc.sample_count());
 
-    // In the last few meters of the straight before the corner,
-    // FC speed < QSS speed because FC has less braking available
-    // as it approaches the curvature transition.
     bool fc_slower = false;
     for (std::size_t i = 0; i < t_qss.sample_count(); ++i) {
         double s = t_qss.sample(i).distance_m;
@@ -176,11 +148,9 @@ TEST(FrictionCircleTest, InterviewTrack_EllipseBudgetRespected) {
     double mu_g = veh.mu * veh.g_mps2;
     double a_max = veh.max_accel_mps2;
 
-    FrictionCircleSolver fc(0.5);
-    auto telem = fc.solve(track, veh);
+    LapTimeSolver solver;
+    auto telem = solver.solve(track, veh, PhysicsConfig::fc());
 
-    // Elliptical utilization: u = sqrt((a_lat/(mu*g))^2 + (a_long/a_max)^2)
-    // Should be <= 1 at every sample within Euler tolerance (~3%).
     double max_u = 0.0;
     for (std::size_t i = 0; i < telem.sample_count(); ++i) {
         const auto& s = telem.sample(i);
@@ -191,9 +161,6 @@ TEST(FrictionCircleTest, InterviewTrack_EllipseBudgetRespected) {
         max_u = std::max(max_u, u);
     }
 
-    // Euler discretization with ds=0.5m causes ~3-4% overshoot in the
-    // computed inter-sample utilization; the velocity profile respects
-    // the constraint at every station point.
     EXPECT_LE(max_u, 1.0 + 0.05)
         << "Max ellipse utilization = " << max_u;
 }
@@ -203,10 +170,10 @@ TEST(FrictionCircleTest, InterviewTrack_EllipseBudgetRespected) {
 TEST(FrictionCircleTest, Determinism) {
     auto track = build_interview_track();
     auto veh = make_vehicle();
-    FrictionCircleSolver fc(0.5);
+    LapTimeSolver solver;
 
-    auto t1 = fc.solve(track, veh);
-    auto t2 = fc.solve(track, veh);
+    auto t1 = solver.solve(track, veh, PhysicsConfig::fc());
+    auto t2 = solver.solve(track, veh, PhysicsConfig::fc());
 
     EXPECT_EQ(t1.lap_time(), t2.lap_time());
     ASSERT_EQ(t1.sample_count(), t2.sample_count());
@@ -214,20 +181,15 @@ TEST(FrictionCircleTest, Determinism) {
         EXPECT_EQ(t1.sample(i).speed_mps, t2.sample(i).speed_mps);
 }
 
-// ── Lap time sanity ───────────────────────────────────────────────────
+// ── Lap time sanity: FC slower than QSS ───────────────────────────────
 
 TEST(FrictionCircleTest, InterviewTrack_LapTimeSanity) {
-    // Elliptical constraint gives full a_max on straights and reduced
-    // accel/brake near corners.  Lap time should be slightly above QSS
-    // (which ignores the coupling) but well below the old circular result.
     auto track = build_interview_track();
     auto veh = make_vehicle();
+    LapTimeSolver solver;
 
-    FrictionCircleSolver fc(0.5);
-    auto t_fc = fc.solve(track, veh);
-
-    QssSolver qss(0.5);
-    auto t_qss = qss.solve(track, veh);
+    auto t_fc  = solver.solve(track, veh, PhysicsConfig::fc());
+    auto t_qss = solver.solve(track, veh, PhysicsConfig::qss());
 
     EXPECT_GT(t_fc.lap_time(), t_qss.lap_time())
         << "Elliptical FC should be slower than QSS";

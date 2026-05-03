@@ -1,7 +1,8 @@
 #include "lapsim/Aero.hpp"
 #include "lapsim/Geometry.hpp"
+#include "lapsim/LapTimeSolver.hpp"
+#include "lapsim/PhysicsConfig.hpp"
 #include "lapsim/Segment.hpp"
-#include "lapsim/Solver.hpp"
 #include "lapsim/Telemetry.hpp"
 #include "lapsim/TelemetryReader.hpp"
 #include "lapsim/Track.hpp"
@@ -67,14 +68,13 @@ Track build_interview_track() {
 
 const std::string kTestDir = "test_reader_tmp/";
 
-/// Run AeroSolver, attach metadata & segment IDs, write CSV, return Telemetry.
 Telemetry generate_test_csv(const Track& track, const Vehicle& veh,
                             const std::string& csv_path) {
-    AeroSolver solver(0.5);
-    auto telem = solver.solve(track, veh);
+    LapTimeSolver solver;
+    auto telem = solver.solve(track, veh, PhysicsConfig::aero_preset());
 
     TelemetryMetadata meta;
-    meta.solver_name = solver.name();
+    meta.solver_name = "aero";
     meta.mu          = veh.mu;
     meta.g_mps2      = veh.g_mps2;
     meta.a_max_mps2  = veh.max_accel_mps2;
@@ -186,7 +186,6 @@ TEST(TelemetryReaderTest, MalformedCsv) {
     std::string csv = kTestDir + "malformed.csv";
     auto telem = generate_test_csv(track, veh, csv);
 
-    // Re-read the file, inject a bad line, re-write
     std::ifstream ifs(csv);
     std::vector<std::string> lines;
     std::string line;
@@ -195,17 +194,15 @@ TEST(TelemetryReaderTest, MalformedCsv) {
 
     std::string bad_csv = kTestDir + "malformed2.csv";
     std::ofstream ofs(bad_csv);
-    ofs << lines[0] << "\n";     // header
-    ofs << lines[1] << "\n";     // first valid row
-    ofs << "garbage,data\n";     // bad line
+    ofs << lines[0] << "\n";
+    ofs << lines[1] << "\n";
+    ofs << "garbage,data\n";
     for (std::size_t i = 2; i < lines.size(); ++i)
         ofs << lines[i] << "\n";
     ofs.close();
 
     TelemetryReader reader;
     ASSERT_TRUE(reader.load(bad_csv));
-    // The garbage line may be skipped or parsed with defaults; either way
-    // we should not crash and should load at least the valid rows.
     EXPECT_GT(reader.sample_count(), 0u);
 
     std::filesystem::remove_all(kTestDir);

@@ -1,7 +1,8 @@
 #include "lapsim/Aero.hpp"
 #include "lapsim/Geometry.hpp"
+#include "lapsim/LapTimeSolver.hpp"
+#include "lapsim/PhysicsConfig.hpp"
 #include "lapsim/Segment.hpp"
-#include "lapsim/Solver.hpp"
 #include "lapsim/Telemetry.hpp"
 #include "lapsim/Track.hpp"
 #include "lapsim/Vehicle.hpp"
@@ -73,11 +74,11 @@ std::vector<std::string> read_lines(const std::string& path) {
 }
 
 Telemetry run_aero_with_export(const Track& track, const Vehicle& veh) {
-    AeroSolver solver(0.5);
-    auto telem = solver.solve(track, veh);
+    LapTimeSolver solver;
+    auto telem = solver.solve(track, veh, PhysicsConfig::aero_preset());
 
     TelemetryMetadata meta;
-    meta.solver_name = solver.name();
+    meta.solver_name = "aero";
     meta.mu          = veh.mu;
     meta.g_mps2      = veh.g_mps2;
     meta.a_max_mps2  = veh.max_accel_mps2;
@@ -115,7 +116,6 @@ TEST(TelemetryExportTest, CsvHeaderAndRowCount) {
     EXPECT_TRUE(lines[0].find("sample_idx") != std::string::npos);
     EXPECT_TRUE(lines[0].find("driver_state") != std::string::npos);
 
-    // header + N samples
     EXPECT_EQ(lines.size(), telem.sample_count() + 1);
 
     std::filesystem::remove_all(kTestDir);
@@ -134,12 +134,11 @@ TEST(TelemetryExportTest, CsvFirstLastDistance) {
     auto lines = read_lines(path);
     ASSERT_GT(lines.size(), 2u);
 
-    // Parse s_m from second column (index 1) of first data row
     auto parse_s = [](const std::string& line) -> double {
         std::istringstream ss(line);
         std::string token;
-        std::getline(ss, token, ','); // sample_idx
-        std::getline(ss, token, ','); // s_m
+        std::getline(ss, token, ',');
+        std::getline(ss, token, ',');
         return std::stod(token);
     };
 
@@ -186,12 +185,10 @@ TEST(TelemetryExportTest, SegmentsCsvRowCountAndColumns) {
     telem.write_segments_csv(path);
 
     auto lines = read_lines(path);
-    // header + 8 segment rows
     EXPECT_EQ(lines.size(), 9u);
     EXPECT_TRUE(lines[0].find("segment_id") != std::string::npos);
     EXPECT_TRUE(lines[0].find("mean_ellipse_util") != std::string::npos);
 
-    // Count columns in header: expect 11
     int col_count = 1;
     for (char c : lines[0]) if (c == ',') ++col_count;
     EXPECT_EQ(col_count, 11);
@@ -199,22 +196,21 @@ TEST(TelemetryExportTest, SegmentsCsvRowCountAndColumns) {
     std::filesystem::remove_all(kTestDir);
 }
 
-// ── BasicSolver: no per-sample CSV/JSON, segments CSV still written ──
+// ── Basic preset: no per-sample CSV/JSON, segments CSV still written ──
 
 TEST(TelemetryExportTest, BasicSolverSkipsCsvJson) {
     auto track = build_interview_track();
     auto veh = make_vehicle();
 
-    BasicSolver solver;
-    auto telem = solver.solve(track, veh);
+    LapTimeSolver solver;
+    auto telem = solver.solve(track, veh, PhysicsConfig::basic());
     EXPECT_EQ(telem.sample_count(), 0u);
 
     std::string csv_path = kTestDir + "basic_telem.csv";
     std::string seg_path = kTestDir + "basic_segs.csv";
 
-    // Segments CSV should be produced with 8 rows even without samples.
     TelemetryMetadata meta;
-    meta.solver_name = solver.name();
+    meta.solver_name = "basic";
     meta.mu = veh.mu; meta.g_mps2 = veh.g_mps2;
     meta.a_max_mps2 = veh.max_accel_mps2; meta.mass_kg = veh.mass_kg;
     telem.set_metadata(meta);
@@ -223,10 +219,9 @@ TEST(TelemetryExportTest, BasicSolverSkipsCsvJson) {
     auto seg_lines = read_lines(seg_path);
     EXPECT_EQ(seg_lines.size(), 9u);
 
-    // CSV with 0 samples: header only
     telem.write_csv(csv_path);
     auto csv_lines = read_lines(csv_path);
-    EXPECT_EQ(csv_lines.size(), 1u);  // header only, no data rows
+    EXPECT_EQ(csv_lines.size(), 1u);
 
     std::filesystem::remove_all(kTestDir);
 }
@@ -238,7 +233,6 @@ TEST(TelemetryExportTest, DriverStateClassification) {
     auto veh = make_vehicle();
     auto telem = run_aero_with_export(track, veh);
 
-    // S1 early samples: car accelerating from rest → ACCEL
     bool found_accel = false;
     for (std::size_t i = 1; i < telem.sample_count() && i < 20; ++i) {
         if (telem.sample(i).distance_m < 50.0 &&
@@ -250,9 +244,6 @@ TEST(TelemetryExportTest, DriverStateClassification) {
     }
     EXPECT_TRUE(found_accel);
 
-    // Deep inside C2 (arc at ~200m): high a_lat, low a_long → CORNERING
-    // C1 ends at ~170.7m, C2 starts there and is 31.4m long
-    // Midpoint of C2 ≈ 186m
     bool found_corner = false;
     for (std::size_t i = 0; i < telem.sample_count(); ++i) {
         const auto& s = telem.sample(i);
@@ -282,13 +273,12 @@ TEST(TelemetryExportTest, CsvRoundTrip) {
     auto lines = read_lines(path);
     ASSERT_EQ(lines.size(), telem.sample_count() + 1);
 
-    // Parse time from the last data row (column index 2 = t_s)
     auto parse_t = [](const std::string& line) -> double {
         std::istringstream ss(line);
         std::string token;
-        std::getline(ss, token, ','); // sample_idx
-        std::getline(ss, token, ','); // s_m
-        std::getline(ss, token, ','); // t_s
+        std::getline(ss, token, ',');
+        std::getline(ss, token, ',');
+        std::getline(ss, token, ',');
         return std::stod(token);
     };
 

@@ -143,12 +143,17 @@ double RacingLine::offset_in_segment(const SegContext& sc, double s_local) const
     const double L_seg = sc.length;
 
     // YAML-configured constant straight: hold the configured offset across
-    // the middle of the segment with a short hermite blend at each end so
-    // the line meets adjacent segments smoothly. Blend distance is 10% of
-    // the straight's length, capped at 5 m.
+    // the middle of the segment with a hermite blend at each end so the line
+    // meets adjacent segments smoothly. Blend distance scales with the
+    // straight's length: real racing lines ease into the next corner's setup
+    // gradually rather than snapping in over a fixed distance, and a short
+    // hard transition (e.g. 5 m) on a 60 m straight produces a curvature spike
+    // that makes a path-aware solver brake for nothing. Cap at L/2 - 1 m so
+    // the two blends never overlap and at least 2 m of plateau survives even
+    // on very short straights.
     if (sc.yaml_offset.has_value()) {
         const double y = *sc.yaml_offset;
-        const double blend = std::min(0.10 * L_seg, 5.0);
+        const double blend = std::min(0.30 * L_seg, L_seg * 0.5 - 1.0);
         if (s_local <= blend) {
             return hermite01(sc.entry_off, y, s_local / blend);
         }

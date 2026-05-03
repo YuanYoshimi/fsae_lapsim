@@ -220,10 +220,12 @@ TEST(RacingLineTest, StraightOffsetTransitionsSmoothly) {
     RacingLine line(track, {});
 
     // S1 has racing_offset_m: -1.7, length 100. Lap-start treats prev as 0.
-    // Blend = min(0.10·L, 5 m) = 5 m at each end.
+    // Blend = min(0.30·L, L/2 - 1) = min(30, 49) = 30 m at each end,
+    // leaving a 40 m plateau in the middle.
     EXPECT_NEAR(line.offset(0.0),   0.0, 1e-3)   << "lap start, no prev context";
-    EXPECT_NEAR(line.offset(5.0),  -1.7, 1e-3)   << "5 m in, blend complete";
-    EXPECT_NEAR(line.offset(95.0), -1.7, 1e-3)   << "5 m before end, still on plateau";
+    EXPECT_NEAR(line.offset(30.0), -1.7, 1e-3)   << "30 m in, start-blend complete";
+    EXPECT_NEAR(line.offset(50.0), -1.7, 1e-3)   << "plateau center";
+    EXPECT_NEAR(line.offset(70.0), -1.7, 1e-3)   << "70 m in, end-blend just starting (and exit_off==yaml so no change)";
     // s=100 lands on the S1/C1 boundary; both sides see -1.7 because S1's
     // exit blend ends at C1.entry_off and C1's nominal entry_off is also -1.7.
     EXPECT_NEAR(line.offset(100.0), -1.7, 1e-3)  << "S1/C1 boundary";

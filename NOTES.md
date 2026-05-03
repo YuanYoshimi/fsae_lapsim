@@ -111,13 +111,36 @@ Added constant track width (4.0 m) to geometry layer. YAML `width_m` field parse
 
 ### Phase 10: Racing Line Representation (DONE)
 
-`RacingLine` class produces a hand-coded out-in-out path inside the corridor, parameterized by centerline arc-length. Sign convention: `+ offset = LEFT of travel`. Arc offset profile is a piecewise smoothstep: `entry → apex → exit` (zero slope at all knots, so no kinks at boundaries). Straight profile blends `prev.exit_off → 0 → next.entry_off` over `entry_blend_m` / `exit_blend_m` with a centerline plateau in the middle for long straights. Adjacent-arc seams (C1/C2, C2/C3 chicane) are averaged in pass 1.5 to remove what would otherwise be a 3.4 m offset jump at opposite-handed corners.
+Added RacingLine class for hand-coded racing line through the track 
+corridor (Phase 9's 4 m width).
 
-Curvature uses the closed-form offset-curve formula `κ_line = κ_track / (1 - off · κ_track)` (do Carmo §1-7), exact at apex plateaus, with a denominator>0.1 sanity guard. No FD on track quantities (avoids spikes at the κ-discontinuous straight-arc boundary). `Track::curvature(s)` was added as a thin segment-lookup wrapper. Heading is centered FD on `position()` with h=0.1 m.
+Three design decisions:
 
-Visualizer renders the racing line as a 2.5 px bright-orange (255,140,0) overlay sampled at ds=0.5 m; title gains "racing line: ON" when active. `lapsim_viz --racing-line` enables it. Without the flag, the viz is identical to Phase 9.
+1. **Straights use YAML-configured per-segment racing_offset_m** 
+   (signed meters, + = LEFT of travel direction). Each straight in 
+   the track YAML can specify where the racing line should sit. 
+   On the interview track, all three straights specify -1.7 m 
+   (outside-of-next-corner, since C1, C4, C5 are all left turns). 
+   Hermite blends (5 m at each end) smoothly transition to/from 
+   adjacent segments. If unspecified, falls back to algorithmic 
+   blend across the straight.
 
-7 new tests in `test_racing_line.cpp`. The HeadingContinuousAtBoundaries test deviates from the spec'd `heading(s ± 0.1)` and uses a 1 mm chord on each side instead — on tight arcs (R=5 C4/C5) the line genuinely sweeps ~0.12 rad in 0.1 m as offset transitions to apex, which is real fast evolution, not a kink; the 1 mm chord isolates true boundary continuity. All four lap times unchanged (no solver/physics touched). Test count 80→87.
+2. **Arcs use algorithmic out-in-out** with two protection mechanisms:
+   - **Apex-radius cap**: apex offset capped at 0.18·R to prevent the 
+     offset-curve formula κ_line = κ_track / (1 - offset · κ_track) 
+     from amplifying curvature on tight corners. At C4/C5 (R=5), this 
+     reduces apex offset from 1.7 m to 0.9 m and keeps the line 
+     geometrically sensible.
+   - **Chicane seam-averaging**: adjacent arcs of opposite turn 
+     direction (C1→C2, C2→C3) average their seam offsets to ~0 to 
+     eliminate offset discontinuities.
+
+3. **Curvature uses the analytic offset-curve formula** instead of 
+   finite differences, which would produce spikes at straight-arc 
+   segment boundaries where centerline curvature is discontinuous.
+
+Solver still uses centerline (Phase 11 will make it path-aware). All 
+four lap times unchanged. Test count 80→90, all passing.
 
 ---
 
